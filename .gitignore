@@ -1,0 +1,14 @@
+# Your Untappd export and everything generated from it is personal data: keep it local.
+/*.csv
+/*.json
+!/config.json
+config.local.json
+originals/
+build/
+site/data/
+site/img/
+
+# Tooling
+.claude/
+.DS_Store
+__pycache__/

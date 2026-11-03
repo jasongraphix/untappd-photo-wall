@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Untappd Photo Wall</title>
+<meta name="description" content="Every beer photographed on Untappd, as one big hoverable mosaic.">
+<style>
+  :root {
+    --bg: #0d0b09;
+    --panel: rgba(22, 18, 14, .92);
+    --line: #3a322a;
+    --text: #f1e9de;
+    --muted: #a89f94;
+    --accent: #e8a33d;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  body { overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+  .embed canvas { touch-action: pan-y; }
+  button, input { font: inherit; color: inherit; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  header { position: fixed; top: 0; left: 0; right: 0; z-index: 2; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px; padding: 14px 16px; pointer-events: none; flex-wrap: wrap; }
+  header > * { pointer-events: auto; }
+  h1 { margin: 0; font-size: 20px; line-height: 1.1; letter-spacing: -.01em; }
+  h1 small { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+  #hint { flex: 1; text-align: center; color: var(--muted); font-size: 12px; pointer-events: none; transition: opacity .6s; }
+  #hint.off { opacity: 0; }
+  .views { display: flex; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; }
+  .views button { appearance: none; border: 0; background: transparent; color: var(--muted); font-size: 13px;
+    padding: 6px 12px; border-radius: 999px; cursor: pointer; }
+  .views button:hover { color: var(--text); }
+  .views button[aria-pressed="true"] { background: var(--accent); color: #1a1208; font-weight: 600; }
+  button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  #bar { position: fixed; z-index: 2; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px 12px; pointer-events: none; }
+  #bar > * { pointer-events: auto; }
+  .pill { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; }
+  #search { flex: 1; max-width: 420px; display: flex; align-items: center; gap: 8px; padding: 0 14px; height: 34px; }
+  #q { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; font-size: 13px; }
+  #q::placeholder { color: var(--muted); }
+  #qc { font-size: 12px; color: var(--accent); white-space: nowrap; }
+  .btn { height: 34px; padding: 0 14px; font-size: 13px; cursor: pointer; white-space: nowrap; color: var(--text);
+    text-decoration: none; display: inline-flex; align-items: center; }
+  .btn:hover { border-color: var(--muted); }
+  #tl { flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 4px; height: 34px; }
+  #tl[hidden], #search[hidden], #replay[hidden], #full[hidden] { display: none; }
+  #tl button { width: 28px; height: 28px; border-radius: 50%; border: 0; background: var(--accent); color: #1a1208; cursor: pointer; font-size: 12px; }
+  #tl button.plain { background: transparent; color: var(--muted); }
+  #scrub { flex: 1; min-width: 0; accent-color: var(--accent); }
+  #tdate { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 150px; text-align: right; font-variant-numeric: tabular-nums; }
+  #full { margin-left: auto; }
+
+  #card { position: fixed; z-index: 3; left: 0; top: 0; max-width: 260px; padding: 10px 12px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; pointer-events: none; opacity: 0; transition: opacity .12s;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  #card.on { opacity: 1; }
+  #card b { display: block; font-size: 14px; }
+  #card .sub { color: var(--muted); font-size: 12px; }
+  #card .row { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  #card .stars { color: var(--accent); font-weight: 600; }
+  #card q { display: block; margin-top: 6px; font-size: 12px; font-style: italic; color: var(--text); quotes: none; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; z-index: 4; background: var(--bg);
+    color: var(--muted); transition: opacity .5s; }
+  #loading.off { opacity: 0; pointer-events: none; }
+
+  .embed header { padding: 10px 12px; }
+  .embed h1, .embed #hint { display: none; }
+  .embed header { justify-content: flex-start; }
+  .embed .views button { padding: 5px 10px; font-size: 12px; }
+  .embed #bar { padding: 6px 12px 10px; }
+  .embed #search, .embed #replay, .embed #tl { display: none; }
+
+  @media (max-width: 640px) {
+    h1 small, #hint { display: none; }
+    .views button { padding: 6px 9px; font-size: 12px; }
+    #tdate { min-width: 0; font-size: 11px; }
+    #bar { padding: 8px 10px 12px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><span id="title">Untappd Photo Wall</span><small id="sub"></small></h1>
+  <div id="hint">Move over the grid to magnify &middot; click a beer to open its check-in</div>
+  <div class="views" role="group" aria-label="Arrange by">
+    <button data-mode="wall" aria-pressed="true">Wall</button>
+    <button data-mode="time" aria-pressed="false">Time</button>
+    <button data-mode="style" aria-pressed="false">Style</button>
+    <button data-mode="rating" aria-pressed="false">Rating</button>
+    <button data-mode="abv" aria-pressed="false">ABV</button>
+  </div>
+</header>
+<canvas id="c" role="img" aria-label="Mosaic of every beer photo from Untappd check-ins. Move the pointer over it to magnify."></canvas>
+<div id="card"></div>
+<div id="bar">
+  <label id="search" class="pill"><span class="sr">Search beers</span>
+    <input id="q" type="search" placeholder="Search beers, breweries, styles, places…" autocomplete="off" spellcheck="false">
+    <span id="qc"></span></label>
+  <button id="replay" class="pill btn" type="button">▶ Replay</button>
+  <div id="tl" class="pill" hidden>
+    <button id="play" type="button" aria-label="Pause">❚❚</button>
+    <input id="scrub" type="range" min="0" max="1" value="0" step="1" aria-label="Timeline">
+    <span id="tdate"></span>
+    <button id="tclose" class="plain" type="button" aria-label="Close replay">✕</button>
+  </div>
+  <a id="full" class="pill btn" href="./" target="_blank" rel="noopener" hidden>Open full screen ↗</a>
+</div>
+<div id="loading">Pouring&hellip;</div>
+<noscript><p style="position:fixed;inset:0;display:grid;place-items:center;margin:0">This gallery needs JavaScript.</p></noscript>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const canvas = $('c'), ctx = canvas.getContext('2d');
+  const card = $('card'), hint = $('hint');
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const embed = new URLSearchParams(location.search).has('embed');
+  if (embed) { document.body.classList.add('embed'); $('full').hidden = false; }
+  const ACCENT = '#e8a33d', DIM = .1, GHOST = .05;
+
+  let meta, beers = [], atlases = [];
+  let W = 0, H = 0, dpr = 1;
+  let mode = 'wall';
+  let cell = 20, gap = 2;
+  let tx, ty, fx, fy, cx, cy;       // target / from / current top-left of each tile cell
+  let labels = [];
+  let anim = null, raf = 0, lastTs = 0;
+  const lens = { x: 0, y: 0, tx: 0, ty: 0, s: 0, target: 0, R: 140, size: 180 };
+  let hover = -1;
+  const medium = new Map();
+
+  // search
+  let hay = [], match = null, matchCount = 0, filtering = false;
+  // replay
+  const rp = { on: false, playing: false, pos: 0 };
+
+  const dateFmt = new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const monthFmt = new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', timeZone: 'UTC' });
+
+  // ---------- grouping ----------
+  function groupBy(m) {
+    const buckets = new Map(), order = [];
+    const add = (key, i) => { if (!buckets.has(key)) { buckets.set(key, []); order.push(key); } buckets.get(key).push(i); };
+    if (m === 'wall') return [{ label: null, items: beers.map((_, i) => i) }];
+    if (m === 'time') {
+      beers.forEach((b, i) => add(b.date.slice(0, 4), i));
+      return order.map(k => ({ label: k, items: buckets.get(k) }));
+    }
+    if (m === 'style') {
+      beers.forEach((b, i) => add(b.style.split(' - ')[0], i));
+      const other = [], minGroup = Math.max(3, Math.round(beers.length * .0165));
+      order.forEach(k => { if (buckets.get(k).length < minGroup) other.push(...buckets.get(k)); });
+      const out = order.filter(k => buckets.get(k).length >= minGroup)
+        .sort((a, c) => buckets.get(c).length - buckets.get(a).length)
+        .map(k => ({ label: k, items: buckets.get(k) }));
+      if (other.length) out.push({ label: 'Other styles', items: other.sort((a, c) => a - c) });
+      return out;
+    }
+    if (m === 'rating') {
+      beers.forEach((b, i) => {
+        const r = b.rating || 0;
+        add(r <= 0 ? 'u' : String(Math.max(2.5, Math.floor(r * 2) / 2)), i);
+      });
+      const label = k => k === 'u' ? 'Unrated' : k === '5' ? '5★' : k === '2.5' ? '2.75★ and under' : `${k} – ${(+k + .25)}★`;
+      return order.filter(k => k !== 'u').sort((a, c) => c - a).concat(order.includes('u') ? ['u'] : [])
+        .map(k => ({ label: label(k), items: buckets.get(k) }));
+    }
+    const bins = [[0, 'No ABV'], [5, 'Under 5%'], [7, '5 – 6.9%'], [9, '7 – 8.9%'], [12, '9 – 11.9%'], [99, '12% and up']];
+    const out = bins.map(([, l]) => ({ label: l, items: [] }));
+    beers.forEach((b, i) => {
+      const a = b.abv;
+      if (!a) return out[0].items.push(i);
+      const j = bins.findIndex(([max], idx) => idx > 0 && a < max);
+      out[j < 0 ? 5 : j].items.push(i);
+    });
+    return [...out.slice(1), out[0]].filter(g => g.items.length);
+  }
+
+  // ---------- layout ----------
+  const LABEL_H = 20;
+  const pad = () => ({ mx: W < 640 ? 10 : 16, top: embed ? 48 : W < 640 ? 52 : 64, bottom: embed ? 40 : 54 });
+
+  function flow(groups, c, p) {
+    const cols = Math.max(1, Math.floor((W - p.mx * 2) / c));
+    const left = (W - cols * c) / 2;
+    const x = new Float32Array(beers.length), y = new Float32Array(beers.length), lb = [];
+    let yy = p.top;
+    groups.forEach((g, gi) => {
+      if (g.label) {
+        if (gi) yy += c * .6;
+        lb.push({ text: `${g.label}  ·  ${g.items.length}`, x: left + 2, y: yy + 13 });
+        yy += LABEL_H;
+      }
+      g.items.forEach((idx, j) => { x[idx] = left + (j % cols) * c; y[idx] = yy + Math.floor(j / cols) * c; });
+      yy += Math.ceil(g.items.length / cols) * c;
+    });
+    return { x, y, lb, bottom: yy };
+  }
+
+  function layout(m) {
+    const g = groupBy(m), p = pad();
+    let c = 56, res;
+    for (; c >= 4; c -= .5) {
+      res = flow(g, c, p);
+      if (res.bottom <= H - p.bottom) break;
+    }
+    cell = c; gap = Math.max(1, Math.round(c * .08));
+    return res;
+  }
+  function applyLayout(animate) {
+    const res = layout(mode);
+    labels = res.lb;
+    tx = res.x; ty = res.y;
+    if (animate && !reduceMotion && fx) {
+      fx = new Float32Array(cx); fy = new Float32Array(cy);
+      anim = { t0: performance.now(), dur: 1100 };
+    } else {
+      cx = new Float32Array(tx); cy = new Float32Array(ty); anim = null;
+    }
+    schedule();
+  }
+  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+  // ---------- sizing ----------
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = canvas.clientWidth; H = canvas.clientHeight;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    lens.R = embed ? Math.max(80, Math.min(150, Math.min(W, H) * .22)) : Math.max(110, Math.min(240, Math.min(W, H) * .22));
+    if (beers.length) applyLayout(false);
+    schedule();
+  }
+
+  // ---------- medium images ----------
+  function getMedium(i) {
+    let m = medium.get(i);
+    if (!m) {
+      m = { img: new Image(), ok: false };
+      m.img.onload = () => { m.ok = true; schedule(); };
+      m.img.src = `img/m/${beers[i].id}.webp`;
+      medium.set(i, m);
+    }
+    return m.ok ? m.img : null;
+  }
+
+  // ---------- drawing ----------
+  function drawTile(i, px, py, size) {
+    const per = meta.perAtlas, a = (i / per) | 0, l = i % per, T = meta.tile;
+    ctx.drawImage(atlases[a], (l % meta.cols) * T, ((l / meta.cols) | 0) * T, T, T, px, py, size, size);
+  }
+  const visible = i => !rp.on || i < rp.pos;
+  const pop = i => { if (!rp.on) return 1; const d = rp.pos - i; return d > 0 && d < 10 ? 1 + .9 * (1 - d / 10) : 1; };
+  const alphaOf = i => (visible(i) ? 1 : GHOST) * (!filtering || match[i] ? 1 : DIM);
+
+  function draw() {
+    if (!atlases.length || !cx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#0d0b09';
+    ctx.fillRect(0, 0, W, H);
+    ctx.imageSmoothingQuality = 'high';
+
+    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#a89f94';
+    for (const l of labels) ctx.fillText(l.text.toUpperCase(), l.x, l.y);
+
+    const n = beers.length, half = cell / 2, base = cell - gap;
+    // aim for a fixed pixel size at the center of the lens, whatever the grid density
+    const S = lens.s, R = lens.R, R2 = R * R;
+    const k = Math.min(30, Math.max(4, lens.size / base - 1)) * S;
+    const big = [];
+    const showRings = filtering && matchCount <= 250;
+    for (let i = 0; i < n; i++) {
+      const ccx = cx[i] + half, ccy = cy[i] + half;
+      if (S > .01) {
+        const dx = ccx - lens.x, dy = ccy - lens.y, r2 = dx * dx + dy * dy;
+        if (r2 < R2) {
+          const r = Math.sqrt(r2), sc = (k + 1) / (k * (r / R) + 1);
+          big.push({ i, x: lens.x + dx * sc, y: lens.y + dy * sc, sc, r });
+          continue;
+        }
+      }
+      const a = alphaOf(i), pp = pop(i), size = base * pp;
+      if (a !== 1) ctx.globalAlpha = a;
+      drawTile(i, ccx - size / 2, ccy - size / 2, size);
+      if (showRings && match[i] && visible(i)) {
+        ctx.strokeStyle = ACCENT; ctx.lineWidth = 1.5;
+        ctx.strokeRect(ccx - size / 2 - .5, ccy - size / 2 - .5, size + 1, size + 1);
+      }
+      if (pp > 1.05) { ctx.strokeStyle = ACCENT; ctx.lineWidth = 1; ctx.strokeRect(ccx - size / 2, ccy - size / 2, size, size); }
+      if (a !== 1) ctx.globalAlpha = 1;
+    }
+
+    big.sort((a, b) => a.sc - b.sc);
+    let best = null;
+    for (const t of big) {
+      const a = alphaOf(t.i), size = base * t.sc * pop(t.i), px = t.x - size / 2, py = t.y - size / 2;
+      if (a !== 1) ctx.globalAlpha = a;
+      let img = null;
+      if (size > 70 && a > .5) img = getMedium(t.i);
+      if (img) ctx.drawImage(img, px, py, size, size); else drawTile(t.i, px, py, size);
+      if (t.sc > 1.3 && a > .5) {
+        ctx.strokeStyle = 'rgba(13,11,9,.85)'; ctx.lineWidth = 1;
+        ctx.strokeRect(px + .5, py + .5, size - 1, size - 1);
+      }
+      ctx.globalAlpha = 1;
+      if (a >= 1 && (!best || t.r < best.r)) best = t;
+    }
+    if (best && S > .6) {
+      // The tile under the cursor grows to the full target size; the blend by distance keeps it
+      // continuous as the cursor crosses from one tile to the next.
+      const own = base * best.sc * pop(best.i);
+      const g = Math.max(0, 1 - best.r / (cell * .8));
+      const size = own + Math.max(0, lens.size * S - own) * g;
+      const fx0 = best.x - size / 2, fy0 = best.y - size / 2;
+      const img = size > 70 ? getMedium(best.i) : null;
+      if (img) ctx.drawImage(img, fx0, fy0, size, size); else drawTile(best.i, fx0, fy0, size);
+      ctx.strokeStyle = ACCENT; ctx.lineWidth = 2;
+      ctx.strokeRect(fx0 - 1, fy0 - 1, size + 2, size + 2);
+      setHover(best.i, { l: fx0, t: fy0, r: fx0 + size, b: fy0 + size });
+    } else setHover(-1);
+  }
+
+  // ---------- hover card ----------
+  function setHover(i, tile) {
+    if (i < 0) { if (hover !== -1) { hover = -1; card.classList.remove('on'); } return; }
+    if (i !== hover) {
+      hover = i;
+      const b = beers[i];
+      card.textContent = '';
+      const add = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; e.textContent = text; card.appendChild(e); return e; };
+      add('b', '', b.name);
+      add('span', 'sub', `${b.brewery} · ${b.style}`);
+      const where = b.home ? 'At home' : [b.venue, [b.city, b.state].filter(Boolean).join(', ')].filter(Boolean).join(' — ');
+      const row = add('div', 'row', '');
+      const s = document.createElement('span'); s.className = 'stars'; s.textContent = b.rating ? '★ ' + b.rating : 'unrated'; row.appendChild(s);
+      row.appendChild(document.createTextNode(` · avg ${b.global || '–'}${b.abv ? ' · ' + b.abv + '%' : ''}`));
+      add('div', 'row', `${dateFmt.format(new Date(b.date))}${where ? ' · ' + where : ''}`);
+      if (b.comment) add('q', '', b.comment.length > 140 ? b.comment.slice(0, 137) + '…' : b.comment);
+      card.classList.add('on');
+    }
+    const cw = card.offsetWidth, ch = card.offsetHeight;
+    // Prefer the right of the tile, then the left; with no room on either side, center it
+    // below the tile (or above, if the bottom edge is too close).
+    const off = 10, top = embed ? 44 : 60;
+    let x, y = Math.max(top, Math.min(H - ch - 8, tile.t));
+    if (tile.r + off + cw <= W - 8) x = tile.r + off;
+    else if (tile.l - off - cw >= 8) x = tile.l - off - cw;
+    else {
+      x = Math.max(8, Math.min(W - cw - 8, (tile.l + tile.r) / 2 - cw / 2));
+      y = tile.b + off;
+      if (y + ch > H - 8) y = Math.max(top, tile.t - off - ch);
+    }
+    card.style.transform = `translate(${x}px, ${y}px)`;
+  }
+
+  // ---------- loop ----------
+  function schedule() { if (!raf) raf = requestAnimationFrame(frame); }
+  function frame(ts) {
+    raf = 0;
+    const dt = lastTs ? Math.min(.05, (ts - lastTs) / 1000) : 0;
+    lastTs = ts;
+    let again = false;
+    if (anim) {
+      const p = Math.min(1, (ts - anim.t0) / anim.dur), n = beers.length;
+      for (let i = 0; i < n; i++) {
+        const local = Math.min(1, Math.max(0, (p - (i / n) * .35) / .65)), e = ease(local);
+        cx[i] = fx[i] + (tx[i] - fx[i]) * e;
+        cy[i] = fy[i] + (ty[i] - fy[i]) * e;
+      }
+      if (p >= 1) { anim = null; cx = new Float32Array(tx); cy = new Float32Array(ty); } else again = true;
+    }
+    if (rp.on && rp.playing) {
+      rp.pos = Math.min(beers.length, rp.pos + beers.length / 30 * dt);
+      $('scrub').value = Math.floor(rp.pos);
+      updateDate();
+      if (rp.pos >= beers.length) { rp.playing = false; setPlayIcon(); } else again = true;
+    }
+    if (rp.on && !rp.playing && pop(Math.floor(rp.pos) - 1) > 1) again = true;
+
+    const e = reduceMotion ? 1 : .3;
+    lens.x += (lens.tx - lens.x) * e; lens.y += (lens.ty - lens.y) * e;
+    lens.s += (lens.target - lens.s) * (reduceMotion ? 1 : .18);
+    if (Math.abs(lens.tx - lens.x) > .3 || Math.abs(lens.ty - lens.y) > .3 || Math.abs(lens.target - lens.s) > .004) again = true;
+    else { lens.x = lens.tx; lens.y = lens.ty; lens.s = lens.target; }
+    draw();
+    if (again) schedule(); else lastTs = 0;
+  }
+
+  // ---------- input ----------
+  let down = null;
+  function moveLens(e) {
+    const touch = e.pointerType === 'touch';
+    lens.size = embed ? 110 : 125;
+    lens.tx = e.clientX; lens.ty = e.clientY + (touch ? -70 : 0);
+    if (lens.target === 0) { lens.x = lens.tx; lens.y = lens.ty; }
+    lens.target = 1;
+    hint.classList.add('off');
+    schedule();
+  }
+  canvas.addEventListener('pointermove', moveLens);
+  canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; moveLens(e); });
+  canvas.addEventListener('pointerup', e => {
+    if (e.pointerType === 'touch') {
+      const tap = down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 8 && performance.now() - down.t < 300;
+      if (tap && hover >= 0) open(hover);
+      lens.target = 0; schedule();
+    }
+    down = null;
+  });
+  canvas.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') { lens.target = 0; schedule(); } });
+  canvas.addEventListener('pointercancel', () => { lens.target = 0; down = null; schedule(); });
+  canvas.addEventListener('click', e => { if (e.pointerType !== 'touch' && e.detail && hover >= 0) open(hover); });
+  function open(i) { window.open('https://untappd.com/c/' + beers[i].id, '_blank', 'noopener'); }
+
+  document.querySelectorAll('.views button').forEach(btn => btn.addEventListener('click', () => {
+    mode = btn.dataset.mode;
+    document.querySelectorAll('.views button').forEach(b => b.setAttribute('aria-pressed', b === btn));
+    applyLayout(true);
+  }));
+  addEventListener('resize', resize);
+
+  // ---------- search ----------
+  function runSearch() {
+    const terms = $('q').value.toLowerCase().split(/\s+/).filter(Boolean);
+    filtering = terms.length > 0;
+    matchCount = 0;
+    for (let i = 0; i < beers.length; i++) {
+      match[i] = !filtering || terms.every(t => hay[i].includes(t)) ? 1 : 0;
+      if (match[i]) matchCount++;
+    }
+    $('qc').textContent = filtering ? `${matchCount.toLocaleString()} ${matchCount === 1 ? 'beer' : 'beers'}` : '';
+    schedule();
+  }
+  $('q').addEventListener('input', runSearch);
+  $('q').addEventListener('keydown', e => { if (e.key === 'Escape') { $('q').value = ''; runSearch(); } });
+
+  // ---------- replay ----------
+  function setPlayIcon() { const b = $('play'); b.textContent = rp.playing ? '❚❚' : '▶'; b.setAttribute('aria-label', rp.playing ? 'Pause' : 'Play'); }
+  function updateDate() {
+    const k = Math.floor(rp.pos);
+    $('tdate').textContent = k ? `${monthFmt.format(new Date(beers[k - 1].date))} · ${k.toLocaleString()} beers` : 'Before the first pint';
+  }
+  function startReplay() {
+    rp.on = true; rp.playing = !reduceMotion; rp.pos = reduceMotion ? beers.length : 0;
+    $('scrub').max = beers.length; $('scrub').value = Math.floor(rp.pos);
+    $('tl').hidden = false; $('search').hidden = true; $('replay').hidden = true;
+    setPlayIcon(); updateDate(); schedule();
+  }
+  function stopReplay() {
+    rp.on = false; rp.playing = false;
+    $('tl').hidden = true; $('search').hidden = false; $('replay').hidden = false;
+    schedule();
+  }
+  $('replay').addEventListener('click', startReplay);
+  $('tclose').addEventListener('click', stopReplay);
+  $('play').addEventListener('click', () => {
+    if (!rp.playing && rp.pos >= beers.length) rp.pos = 0;
+    rp.playing = !rp.playing; setPlayIcon(); schedule();
+  });
+  $('scrub').addEventListener('input', e => { rp.pos = +e.target.value; rp.playing = false; setPlayIcon(); updateDate(); schedule(); });
+
+  // ---------- boot ----------
+  const loadImg = src => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+  fetch('data/beers.json', { cache: 'no-cache' }).then(r => r.json()).then(async d => {
+    meta = d.meta; beers = d.beers;
+    atlases = await Promise.all(Array.from({ length: meta.atlases }, (_, i) => loadImg(`img/atlas-${i}.webp?v=${meta.version}`)));
+    match = new Uint8Array(beers.length).fill(1);
+    hay = beers.map(b => [b.name, b.brewery, b.style, b.venue, b.city, b.state, b.country, b.home ? 'home' : '', b.comment, b.date.slice(0, 4)]
+      .filter(Boolean).join(' ').toLowerCase());
+    if (meta.title) { $('title').textContent = meta.title; document.title = meta.title; }
+    $('sub').textContent = `${beers.length.toLocaleString()} photographed check-ins`;
+    resize();
+    if (!reduceMotion) {
+      fx = new Float32Array(beers.length).map(() => Math.random() * W);
+      fy = new Float32Array(beers.length).map(() => Math.random() * H);
+      cx = new Float32Array(fx); cy = new Float32Array(fy);
+      anim = { t0: performance.now(), dur: 1600 };
+    }
+    $('loading').classList.add('off');
+    schedule();
+  }).catch(err => { $('loading').textContent = 'Could not load the gallery.'; console.error(err); });
+})();
+</script>
+</body>
+</html>
