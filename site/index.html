@@ -15,9 +15,13 @@
     --accent: #e8a33d;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
     font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  body { overflow: hidden; }
+  body { overflow-x: hidden; }
+  body.embed { overflow: hidden; height: 100%; }
+  #spacer { position: absolute; top: 0; left: 0; width: 1px; height: 100%; visibility: hidden; pointer-events: none; }
+  .scrolls header { background: linear-gradient(var(--bg) 65%, rgba(13,11,9,0)); }
+  .scrolls #bar { background: linear-gradient(rgba(13,11,9,0), var(--bg) 40%); }
   canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
   .embed canvas { touch-action: pan-y; }
   button, input { font: inherit; color: inherit; }
@@ -28,8 +32,6 @@
   header > * { pointer-events: auto; }
   h1 { margin: 0; font-size: 20px; line-height: 1.1; letter-spacing: -.01em; }
   h1 small { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
-  #hint { flex: 1; text-align: center; color: var(--muted); font-size: 12px; pointer-events: none; transition: opacity .6s; }
-  #hint.off { opacity: 0; }
   .views { display: flex; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; }
   .views button { appearance: none; border: 0; background: transparent; color: var(--muted); font-size: 13px;
     padding: 6px 12px; border-radius: 999px; cursor: pointer; }
@@ -55,11 +57,16 @@
   #scrub { flex: 1; min-width: 0; accent-color: var(--accent); }
   #tdate { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 150px; text-align: right; font-variant-numeric: tabular-nums; }
   #full { margin-left: auto; }
+  #thint { display: none; color: var(--muted); font-size: 12px; }
+  @media (pointer: coarse) { .embed #thint { display: block; } }
 
   #card { position: fixed; z-index: 3; left: 0; top: 0; max-width: 260px; padding: 10px 12px; background: var(--panel);
     border: 1px solid var(--line); border-radius: 8px; pointer-events: none; opacity: 0; transition: opacity .12s;
     box-shadow: 0 8px 24px rgba(0,0,0,.5); }
   #card.on { opacity: 1; }
+  #card .open { display: none; margin-top: 8px; padding: 6px 0 2px; color: var(--accent); font-size: 13px; font-weight: 600; text-decoration: none; }
+  #card.tap { pointer-events: auto; }
+  #card.tap .open { display: block; }
   #card b { display: block; font-size: 14px; }
   #card .sub { color: var(--muted); font-size: 12px; }
   #card .row { margin-top: 6px; font-size: 12px; color: var(--muted); }
@@ -70,14 +77,14 @@
   #loading.off { opacity: 0; pointer-events: none; }
 
   .embed header { padding: 10px 12px; }
-  .embed h1, .embed #hint { display: none; }
+  .embed h1 { display: none; }
   .embed header { justify-content: flex-start; }
   .embed .views button { padding: 5px 10px; font-size: 12px; }
   .embed #bar { padding: 6px 12px 10px; }
   .embed #search, .embed #replay, .embed #tl { display: none; }
 
   @media (max-width: 640px) {
-    h1 small, #hint { display: none; }
+    h1 small { display: none; }
     .views button { padding: 6px 9px; font-size: 12px; }
     #tdate { min-width: 0; font-size: 11px; }
     #bar { padding: 8px 10px 12px; }
@@ -85,9 +92,8 @@
 </style>
 </head>
 <body>
-<header>
+<header id="hdr">
   <h1><span id="title">Untappd Photo Wall</span><small id="sub"></small></h1>
-  <div id="hint">Move over the grid to magnify &middot; click a beer to open its check-in</div>
   <div class="views" role="group" aria-label="Arrange by">
     <button data-mode="wall" aria-pressed="true">Wall</button>
     <button data-mode="time" aria-pressed="false">Time</button>
@@ -96,6 +102,7 @@
     <button data-mode="abv" aria-pressed="false">ABV</button>
   </div>
 </header>
+<div id="spacer"></div>
 <canvas id="c" role="img" aria-label="Mosaic of every beer photo from Untappd check-ins. Move the pointer over it to magnify."></canvas>
 <div id="card"></div>
 <div id="bar">
@@ -109,6 +116,7 @@
     <span id="tdate"></span>
     <button id="tclose" class="plain" type="button" aria-label="Close replay">✕</button>
   </div>
+  <span id="thint">Press and hold to magnify</span>
   <a id="full" class="pill btn" href="./" target="_blank" rel="noopener" hidden>Open full screen ↗</a>
 </div>
 <div id="loading">Pouring&hellip;</div>
@@ -118,7 +126,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const canvas = $('c'), ctx = canvas.getContext('2d');
-  const card = $('card'), hint = $('hint');
+  const card = $('card');
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const embed = new URLSearchParams(location.search).has('embed');
   if (embed) { document.body.classList.add('embed'); $('full').hidden = false; }
@@ -129,7 +137,7 @@
   let mode = 'wall';
   let cell = 20, gap = 2;
   let tx, ty, fx, fy, cx, cy;       // target / from / current top-left of each tile cell
-  let labels = [];
+  let labels = [], contentH = 0, scrollable = false;
   let anim = null, raf = 0, lastTs = 0;
   const lens = { x: 0, y: 0, tx: 0, ty: 0, s: 0, target: 0, R: 140, size: 180 };
   let hover = -1;
@@ -184,7 +192,7 @@
 
   // ---------- layout ----------
   const LABEL_H = 20;
-  const pad = () => ({ mx: W < 640 ? 10 : 16, top: embed ? 48 : W < 640 ? 52 : 64, bottom: embed ? 40 : 54 });
+  const pad = () => ({ mx: W < 640 ? 10 : 16, top: $('hdr').offsetHeight + 4, bottom: $('bar').offsetHeight + 2 });
 
   function flow(groups, c, p) {
     const cols = Math.max(1, Math.floor((W - p.mx * 2) / c));
@@ -205,16 +213,28 @@
 
   function layout(m) {
     const g = groupBy(m), p = pad();
+    // Tiles never shrink below a legible size on the full page: it scrolls instead.
+    // (An embed has a fixed height and can't scroll, so there everything is squeezed in.)
+    const minC = embed ? 2 : W < 640 ? 10 : 12;
     let c = 56, res;
-    for (; c >= 4; c -= .5) {
+    for (; ; c -= .5) {
       res = flow(g, c, p);
-      if (res.bottom <= H - p.bottom) break;
+      if (res.bottom <= H - p.bottom || c <= minC) break;
     }
     cell = c; gap = Math.max(1, Math.round(c * .08));
+    contentH = Math.max(H, Math.ceil(res.bottom + p.bottom));
     return res;
   }
   function applyLayout(animate) {
     const res = layout(mode);
+    const scrolls = !embed && contentH > H + 2;
+    if (scrolls !== scrollable) {
+      scrollable = scrolls;
+      document.body.classList.toggle('scrolls', scrollable);
+    }
+    $('spacer').style.height = contentH + 'px';
+    canvas.style.touchAction = embed || scrollable ? 'pan-y' : 'none';
+    if (animate) window.scrollTo(0, 0);
     labels = res.lb;
     tx = res.x; ty = res.y;
     if (animate && !reduceMotion && fx) {
@@ -228,10 +248,19 @@
   const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
   // ---------- sizing ----------
-  function resize() {
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    W = canvas.clientWidth; H = canvas.clientHeight;
+  function resize(force) {
+    const nw = canvas.clientWidth, nh = canvas.clientHeight, nd = Math.min(window.devicePixelRatio || 1, 2);
+    if (!force && nw === W && nh === H && nd === dpr) return;
+    // Mobile Safari resizes the viewport a little while you scroll, as its toolbar slides in
+    // and out. That's no reason to rebuild anything: just resize the bitmap and redraw at once
+    // (a cleared canvas left waiting for the next frame shows up as a flicker).
+    const toolbar = !force && beers.length && nw === W && nd === dpr && Math.abs(nh - H) <= 160;
+    W = nw; H = nh; dpr = nd;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    if (toolbar) { draw(); return; }
+    // a lens (or pinned card) from the old size would be drawn out of place, so drop it
+    if (hold) { clearTimeout(hold.timer); hold = null; }
+    lens.s = 0; unpin();
     lens.R = embed ? Math.max(80, Math.min(150, Math.min(W, H) * .22)) : Math.max(110, Math.min(240, Math.min(W, H) * .22));
     if (beers.length) applyLayout(false);
     schedule();
@@ -269,7 +298,8 @@
     ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = '#a89f94';
-    for (const l of labels) ctx.fillText(l.text.toUpperCase(), l.x, l.y);
+    const sy = window.scrollY;
+    for (const l of labels) ctx.fillText(l.text.toUpperCase(), l.x, l.y - sy);
 
     const n = beers.length, half = cell / 2, base = cell - gap;
     // aim for a fixed pixel size at the center of the lens, whatever the grid density
@@ -278,7 +308,7 @@
     const big = [];
     const showRings = filtering && matchCount <= 250;
     for (let i = 0; i < n; i++) {
-      const ccx = cx[i] + half, ccy = cy[i] + half;
+      const ccx = cx[i] + half, ccy = cy[i] + half - sy;
       if (S > .01) {
         const dx = ccx - lens.x, dy = ccy - lens.y, r2 = dx * dx + dy * dy;
         if (r2 < R2) {
@@ -287,6 +317,7 @@
           continue;
         }
       }
+      if (ccy < -cell * 2 || ccy > H + cell * 2) continue;
       const a = alphaOf(i), pp = pop(i), size = base * pp;
       if (a !== 1) ctx.globalAlpha = a;
       drawTile(i, ccx - size / 2, ccy - size / 2, size);
@@ -344,6 +375,8 @@
       row.appendChild(document.createTextNode(` · avg ${b.global || '–'}${b.abv ? ' · ' + b.abv + '%' : ''}`));
       add('div', 'row', `${dateFmt.format(new Date(b.date))}${where ? ' · ' + where : ''}`);
       if (b.comment) add('q', '', b.comment.length > 140 ? b.comment.slice(0, 137) + '…' : b.comment);
+      const link = add('a', 'open', 'Open check-in ↗');
+      link.href = 'https://untappd.com/c/' + b.id; link.target = '_blank'; link.rel = 'noopener';
       card.classList.add('on');
     }
     const cw = card.offsetWidth, ch = card.offsetHeight;
@@ -402,12 +435,46 @@
     lens.tx = e.clientX; lens.ty = e.clientY + (touch ? -70 : 0);
     if (lens.target === 0) { lens.x = lens.tx; lens.y = lens.ty; }
     lens.target = 1;
-    hint.classList.add('off');
     schedule();
   }
-  canvas.addEventListener('pointermove', moveLens);
-  canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; moveLens(e); });
+
+  // In an embed on a touch screen the canvas has to leave the page scrollable, so a plain
+  // swipe scrolls. The lens needs a press and hold; a quick tap pins it for a few seconds,
+  // with a link on the card to open the check-in.
+  const touchEmbed = e => e.pointerType === 'touch' && (embed || scrollable);
+  let hold = null, pinTimer = 0;
+  const unpin = () => { clearTimeout(pinTimer); card.classList.remove('tap'); lens.target = 0; schedule(); };
+  const pin = () => { clearTimeout(pinTimer); card.classList.add('tap'); pinTimer = setTimeout(unpin, 8000); };
+  canvas.addEventListener('touchmove', e => { if (hold && hold.active) e.preventDefault(); }, { passive: false });
+
+  canvas.addEventListener('pointermove', e => {
+    if (touchEmbed(e)) {
+      if (!hold) return;
+      if (hold.active) moveLens(e);
+      else if (Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 8) { clearTimeout(hold.timer); hold = null; }
+      return;
+    }
+    moveLens(e);
+  });
+  canvas.addEventListener('pointerdown', e => {
+    down = { x: e.clientX, y: e.clientY, t: performance.now() };
+    if (touchEmbed(e)) {
+      clearTimeout(pinTimer); card.classList.remove('tap');
+      const h = hold = { x: e.clientX, y: e.clientY, active: false };
+      h.timer = setTimeout(() => { h.active = true; moveLens({ clientX: h.x, clientY: h.y, pointerType: 'touch' }); }, 180);
+      return;
+    }
+    moveLens(e);
+  });
   canvas.addEventListener('pointerup', e => {
+    if (touchEmbed(e)) {
+      const h = hold; hold = null;
+      if (h) clearTimeout(h.timer);
+      const tap = down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 8 && performance.now() - down.t < 300;
+      if (h && (h.active || tap)) { if (tap && !h.active) moveLens(e); pin(); }
+      down = null;
+      return;
+    }
     if (e.pointerType === 'touch') {
       const tap = down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 8 && performance.now() - down.t < 300;
       if (tap && hover >= 0) open(hover);
@@ -416,7 +483,10 @@
     down = null;
   });
   canvas.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') { lens.target = 0; schedule(); } });
-  canvas.addEventListener('pointercancel', () => { lens.target = 0; down = null; schedule(); });
+  canvas.addEventListener('pointercancel', () => {
+    if (hold) { clearTimeout(hold.timer); hold = null; }
+    unpin(); down = null;
+  });
   canvas.addEventListener('click', e => { if (e.pointerType !== 'touch' && e.detail && hover >= 0) open(hover); });
   function open(i) { window.open('https://untappd.com/c/' + beers[i].id, '_blank', 'noopener'); }
 
@@ -425,7 +495,11 @@
     document.querySelectorAll('.views button').forEach(b => b.setAttribute('aria-pressed', b === btn));
     applyLayout(true);
   }));
-  addEventListener('resize', resize);
+  // Watch the canvas itself: on a phone rotation the window's resize event can fire before
+  // the new size has settled, which leaves the canvas bitmap stretched.
+  new ResizeObserver(() => resize()).observe(canvas);
+  addEventListener('orientationchange', () => setTimeout(() => resize(), 300));
+  addEventListener('scroll', schedule, { passive: true });
 
   // ---------- search ----------
   function runSearch() {
@@ -477,7 +551,7 @@
       .filter(Boolean).join(' ').toLowerCase());
     if (meta.title) { $('title').textContent = meta.title; document.title = meta.title; }
     $('sub').textContent = `${beers.length.toLocaleString()} photographed check-ins`;
-    resize();
+    resize(true);
     if (!reduceMotion) {
       fx = new Float32Array(beers.length).map(() => Math.random() * W);
       fy = new Float32Array(beers.length).map(() => Math.random() * H);
