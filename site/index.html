@@ -81,7 +81,9 @@
   .embed header { justify-content: flex-start; }
   .embed .views button { padding: 5px 10px; font-size: 12px; }
   .embed #bar { padding: 6px 12px 10px; }
-  .embed #search, .embed #replay, .embed #tl { display: none; }
+  .embed #bar:has(#tl:not([hidden])) #full, .embed #bar:has(#tl:not([hidden])) #thint { display: none; }
+  @media (max-width: 640px) { .embed #thint { display: none !important; } }
+  @media (max-width: 480px) { .embed #full { display: none; } }
 
   @media (max-width: 640px) {
     h1 small { display: none; }

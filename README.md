@@ -50,10 +50,10 @@ Anything in `config.local.json` (git-ignored) overrides it, so your own settings
 
 ## Embedding
 
-Add `?embed=1` to the URL for a compact version that suits an iframe in a blog post: no title, search or replay, a smaller lens, a link to open the full page, and vertical swipes still scroll the page on a phone.
+Add `?embed=1` to the URL for a compact version that suits an iframe in a blog post: no title, a smaller lens, everything fitted to the frame instead of scrolling, a link to open the full page, and vertical swipes still scroll the page on a phone.
 
 ```html
-<iframe src="https://example.com/beer/?embed=1" width="100%" height="560"
+<iframe src="https://example.com/beer/?embed=1" width="100%" height="700"
         style="border:none" loading="lazy" title="My Untappd photo wall"></iframe>
 ```
 

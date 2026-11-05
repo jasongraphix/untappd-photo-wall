@@ -12,3 +12,6 @@ site/img/
 .claude/
 .DS_Store
 __pycache__/
+
+# Blog drafts
+blog/
