@@ -15,6 +15,7 @@ Re-runnable: existing thumbnails are skipped.
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -46,8 +47,22 @@ def load_config():
     return cfg
 
 
-def run(cmd):
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def run(cmd, cwd=None):
+    subprocess.run(cmd, check=True, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def check_imagemagick():
+    """Fail early, in plain words, if ImageMagick is missing or can't write WebP."""
+    if not shutil.which("magick"):
+        sys.exit("ImageMagick isn't installed (or isn't on your PATH): the 'magick' command wasn't found.\n"
+                 "Install it from https://imagemagick.org, then open a NEW terminal window and try again.")
+    try:
+        formats = subprocess.run(["magick", "-list", "format"], capture_output=True, text=True).stdout
+    except OSError:
+        formats = ""
+    if not any(line.split()[:1] and line.split()[0].rstrip("*") == "WEBP"
+               and "w" in line.split()[2:3][0] for line in formats.splitlines() if len(line.split()) > 2):
+        sys.exit("Your ImageMagick can't write WebP images. Install a full build from https://imagemagick.org.")
 
 
 def make_thumbs(cid):
@@ -72,6 +87,7 @@ def num(v):
 
 
 def main():
+    check_imagemagick()
     for d in (TILES, MED, IMG, DATA):
         os.makedirs(d, exist_ok=True)
 
@@ -91,10 +107,12 @@ def main():
     n_atlas = (len(ids) + PER_ATLAS - 1) // PER_ATLAS
     for a in range(n_atlas):
         chunk = ids[a * PER_ATLAS:(a + 1) * PER_ATLAS]
-        files = [os.path.join(TILES, f"{c}.png") for c in chunk]
+        # Relative file names, run from the tiles folder: ~1,200 full paths would overflow
+        # Windows' command-line length limit.
+        files = [f"{c}.png" for c in chunk]
         out = os.path.join(IMG, f"atlas-{a}.webp")
         run(["magick", "montage", *files, "-tile", f"{COLS}x", "-geometry", f"{TILE}x{TILE}+0+0",
-             "-background", "#111", "-quality", "80", out])
+             "-background", "#111", "-quality", "80", out], cwd=TILES)
         print("wrote", out, os.path.getsize(out) // 1024, "KB")
 
     # A photo check-in left unrated borrows the beer's rating from any other check-in of it.
@@ -130,7 +148,7 @@ def main():
     meta = {"tile": TILE, "cols": COLS, "rows": ROWS, "perAtlas": PER_ATLAS,
             "atlases": n_atlas, "medium": MEDIUM, "version": version,
             "title": load_config()["title"]}
-    with open(os.path.join(DATA, "beers.json"), "w") as f:
+    with open(os.path.join(DATA, "beers.json"), "w", encoding="utf-8") as f:
         json.dump({"meta": meta, "beers": beers}, f, separators=(",", ":"), ensure_ascii=False)
     print("wrote beers.json", os.path.getsize(os.path.join(DATA, "beers.json")) // 1024, "KB")
 

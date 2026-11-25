@@ -6,41 +6,62 @@ A single page that turns your Untappd check-in photos into one big mosaic. Move 
 
 ![The wall of beer photos](docs/screenshot.jpg)
 
-It's a static site. There's no server, no framework and no build step for the page itself: a couple of Python scripts turn your export into thumbnails and a data file, and the result drops onto any web host.
+It's a static site. There's no server and no framework: a couple of Python scripts turn your export into thumbnails and a data file, and the result drops onto any web host.
 
 *Shared as is, for fun. It's a hobby project, so don't expect support.*
 
 ## What you need
 
-- **An Untappd data export.** Untappd offers CSV and JSON exports to paid subscribers (account settings, "Export Data"). Either works.
-- **Python 3.9+** (standard library only).
-- **[ImageMagick](https://imagemagick.org)** with WebP support, for thumbnails (`brew install imagemagick` on macOS).
+- **An Untappd data export.** Untappd offers CSV and JSON exports to paid subscribers (your account settings, "Export Data"). Either format works, and you only need a subscription for long enough to export.
+- **Python 3.9 or newer.** On a Mac, run `python3 --version` in Terminal to see if you have it; if not, install it from [python.org](https://www.python.org/downloads/). On Windows, install it from python.org and **tick "Add python.exe to PATH"** on the first screen of the installer.
+- **[ImageMagick](https://imagemagick.org)**, a free tool that makes the thumbnails. On a Mac with [Homebrew](https://brew.sh): `brew install imagemagick`. On Windows, run `winget install ImageMagick.ImageMagick` or use the installer from imagemagick.org and leave "Add application directory to your system path" ticked.
 
 ## Build it
 
-Put your export in this folder (any file name; it's found by content), then:
+1. **Get the project.** On this page click the green **Code** button, choose **Download ZIP**, and unzip it somewhere you'll find it (or `git clone` it if you know how).
+2. **Add your export.** Put the CSV or JSON file you got from Untappd in the unzipped folder, next to this README. Any file name is fine; it's recognized by what's inside.
+3. **Open a terminal in that folder.**
+   - **Mac:** open Terminal, type `cd ` (with a space), drag the folder onto the window, and press Return.
+   - **Windows:** open the folder in File Explorer, click the address bar, type `cmd` and press Enter.
+4. **Run the two scripts.** On Windows use `python` instead of `python3`.
+
+   ```bash
+   python3 scripts/download_photos.py   # downloads your check-in photos into originals/
+   python3 scripts/build_assets.py      # makes thumbnails and the data the page needs
+   ```
+
+   The first run takes a few minutes, depending on how many photos you have. If it stops partway, just run it again; it picks up where it left off.
+
+That's it. Everything the site needs is now in the `site/` folder.
+
+Both scripts can be re-run any time. Photos and thumbnails that already exist are skipped, so after a fresh export only the new check-ins are processed. 
+
+## See it
+
+Opening `site/index.html` by double-clicking won't work, because browsers block a page from loading its own data files that way. To view your site, you can either:
+
+**Option A: View it on your own computer.** In the same terminal window, run this (again, `python` on Windows):
 
 ```bash
-python3 scripts/download_photos.py   # fetches your check-in photos into originals/
-python3 scripts/build_assets.py      # thumbnails, sprite sheets, site/data/beers.json
 python3 -m http.server 8000 --directory site
 ```
 
-Open http://localhost:8000.
+Then open http://localhost:8000 in your browser. Press Ctrl+C in the terminal to stop it.
 
-Both scripts can be re-run any time. Photos and thumbnails that already exist are skipped, so after a fresh export only the new check-ins are processed.
+**Option B: Put it on a server.** Upload the contents of `site/` to any web host that serves plain HTML files. You can use FTP, SFTP or your host's file manager (Cyberduck and FileZilla are free). 
 
-If you keep more than one export in the folder, the newest wins. To choose one, pass its path: `python3 scripts/build_assets.py path/to/export.json`.
+When you add new photo check-ins later, export again, re-run the two scripts, and upload your `site/` folder again. 
 
-## Deploy it
+## Something went wrong?
 
-Upload the contents of `site/` to any static host. That's all of it. Everything uses relative paths, so it works in a subfolder. `originals/`, `build/` and your export never need to leave your machine.
-
-A re-upload after adding new check-ins takes effect immediately: the page appends a version to its sprite sheets, which changes whenever the set of photos does.
+- **"ImageMagick isn't installed" or "'magick' was not found."** Install ImageMagick (above), then close the terminal and open a new one so it can see the new program.
+- **"python3 is not recognized" (Windows).** Use `python` instead, or `py`. If neither works, reinstall Python and tick "Add python.exe to PATH".
+- **The page is blank or says it can't load data.** Use Option A or B above rather than opening the file directly, and make sure `build_assets.py` finished without errors.
+- **Some photos are missing.** Re-run `download_photos.py`. It lists any it couldn't fetch at the end, and a re-run retries them.
 
 ## Settings
 
-`config.json` holds the page title:
+`config.json` only has one option, to set the page title:
 
 ```json
 { "title": "My Beer Wall" }
@@ -57,14 +78,12 @@ Add `?embed=1` to the URL for a compact version that suits an iframe in a blog p
         style="border:none" loading="lazy" title="My Untappd photo wall"></iframe>
 ```
 
-Your host must not send `X-Frame-Options: DENY` or `SAMEORIGIN` for the page, or a browser will refuse to show it in an iframe on another site.
-
 ## How it works
 
-- `scripts/checkins.py` reads the CSV or JSON export and gives back the same rows either way.
-- `scripts/download_photos.py` downloads each check-in photo from Untappd's image host.
-- `scripts/build_assets.py` makes 64px tiles packed into sprite sheets (two images for about 2,400 photos), a 360px image per check-in that loads on hover, and a slim `beers.json`.
-- `site/index.html` draws every tile to one canvas and does the lens, layouts, search and replay in plain JavaScript.
+- `scripts/checkins.py` reads the CSV or JSON export
+- `scripts/download_photos.py` downloads each check-in photo from Untappd
+- `scripts/build_assets.py` makes 64px photo sprite sheets and a 360px copy of each image that loads on hover, along with the `beers.json` file with all the image details
+- `site/index.html` draws every tile to one canvas and handles the lens, layouts, search and replay with JavaScript.
 
 ## Privacy
 
