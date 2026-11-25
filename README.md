@@ -2,7 +2,7 @@
 
 A single page that turns your Untappd check-in photos into one big mosaic. Move the pointer over it and a fisheye lens magnifies the tiles under it; click a beer to open its check-in. Regroup the whole wall by time, style, rating or ABV, search it, or replay your history from the first pint.
 
-**Live example:** [static.jasongraphix.com/untappd](https://static.jasongraphix.com/untappd)
+**Live example:** [untappd.jasongraphix.com](https://untappd.jasongraphix.com)
 
 ![The wall of beer photos](docs/screenshot.jpg)
 
